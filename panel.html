@@ -1,0 +1,118 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>MobX DevTools</title>
+    <link rel="stylesheet" href="panel.css" />
+  </head>
+  <body>
+    <!-- Toolbar -->
+    <div id="toolbar">
+      <div class="toolbar-group">
+        <button id="btn-start" title="Start profiling">
+          <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor">
+            <circle cx="8" cy="8" r="6" fill="#e74c3c"/>
+          </svg>
+          <span>Record</span>
+        </button>
+        <button id="btn-stop" title="Stop profiling" disabled>
+          <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor">
+            <rect x="3" y="3" width="10" height="10" rx="1"/>
+          </svg>
+          <span>Stop</span>
+        </button>
+      </div>
+
+      <div class="toolbar-group toolbar-status">
+        <span id="status-indicator" class="status-dot status-inactive"></span>
+        <span id="status-text">Idle</span>
+        <span id="event-count" class="badge">0</span>
+      </div>
+
+      <div class="toolbar-group">
+        <button id="btn-filters" title="Toggle filter panel">
+          <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor">
+            <path d="M1 2h14L9 9v5l-2-1V9L1 2z"/>
+          </svg>
+          <span>Filters</span>
+        </button>
+        <button id="btn-download" title="Download profiling data as JSON" disabled>
+          <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor">
+            <path d="M8 1v8.5M8 9.5L5 6.5M8 9.5L11 6.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
+            <path d="M3 11v2h10v-2" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
+          </svg>
+          <span>Save</span>
+        </button>
+        <input id="search-input" type="text" placeholder="Search events..." />
+      </div>
+    </div>
+
+    <!-- Filter panel (collapsible) -->
+    <div id="filter-panel" class="hidden">
+      <div class="filter-header">
+        <strong>Event Type Filters</strong>
+      </div>
+      <div id="filter-checkboxes" class="filter-grid">
+        <!-- Populated by JS -->
+      </div>
+    </div>
+
+    <!-- Main content area -->
+    <div id="main">
+      <!-- Profiling overlay — shown during active recording -->
+      <div id="profiling-screen" class="profiling-screen hidden">
+        <div class="profiling-indicator">
+          <svg width="48" height="48" viewBox="0 0 16 16">
+            <circle cx="8" cy="8" r="6" fill="#f44747" class="profiling-dot"/>
+          </svg>
+          <p class="profiling-title">Profiling...</p>
+          <p class="profiling-subtitle">Interact with your application. Click <strong>Stop</strong> to view results.</p>
+          <p id="profiling-count" class="profiling-count">0 events captured</p>
+        </div>
+      </div>
+
+      <!-- Event list (shown after profiling stops with data) -->
+      <div id="event-list-container" class="hidden">
+        <div id="event-list-header" class="list-header">
+          <span class="col-expand"></span>
+          <span class="col-count">Count</span>
+          <span class="col-time">Last seen</span>
+          <span class="col-type">Type</span>
+          <span class="col-name">Name<span class="col-resize-handle" id="name-resize-handle"></span></span>
+        </div>
+        <div id="event-list">
+        </div>
+      </div>
+
+      <!-- Idle empty state (shown when no profiling has happened) -->
+      <div id="empty-state" class="empty-state">
+        <p>No profiling data.</p>
+        <p class="muted">Click <strong>Record</strong> to start profiling MobX events.</p>
+        <div id="mobx-info" class="mobx-info"></div>
+        <p class="muted small">Profiling is only available on localhost:</p>
+        <p class="muted small"><code>localhost</code>, <code>127.0.0.1</code>, and <code>[::1]</code></p>
+      </div>
+
+      <!-- Blocked state (shown on production URLs) -->
+      <div id="blocked-state" class="empty-state hidden">
+        <p>Profiling disabled on this URL.</p>
+        <p class="muted">MobxSpy only runs on localhost to prevent accidental use on production.</p>
+        <p class="muted small">Allowed: <code>localhost</code>, <code>127.0.0.1</code>, and <code>[::1]</code></p>
+        <p id="blocked-url" class="muted small"></p>
+      </div>
+
+      <!-- Event detail panel -->
+      <div id="detail-panel" class="hidden">
+        <div class="detail-header">
+          <strong id="detail-title">Event Detail</strong>
+          <button id="btn-close-detail" title="Close">&times;</button>
+        </div>
+        <div id="detail-event-list"></div>
+        <div id="detail-content"></div>
+      </div>
+    </div>
+
+    <script src="panel.js"></script>
+  </body>
+</html>

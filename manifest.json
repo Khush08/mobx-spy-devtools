@@ -1,0 +1,42 @@
+{
+  "manifest_version": 3,
+  "name": "MobX Spy",
+  "version": "1.0.0",
+  "description": "Monitor MobX state changes using the spy utility. Start/pause monitoring and filter by event type.",
+  "icons": {
+    "16": "icons/icon16.png",
+    "48": "icons/icon48.png",
+    "128": "icons/icon128.png"
+  },
+  "devtools_page": "devtools.html",
+  "background": {
+    "service_worker": "background.js"
+  },
+  "content_scripts": [
+    {
+      "matches": [
+        "*://localhost/*",
+        "*://127.0.0.1/*",
+        "*://[::1]/*",
+        "*://0.0.0.0/*"
+      ],
+      "js": ["content.js"],
+      "run_at": "document_start"
+    }
+  ],
+  "web_accessible_resources": [
+    {
+      "resources": ["inject.js"],
+      "matches": [
+        "*://localhost/*",
+        "*://127.0.0.1/*",
+        "*://[::1]/*",
+        "*://0.0.0.0/*"
+      ]
+    }
+  ],
+  "content_security_policy": {
+    "extension_pages": "script-src 'self'; object-src 'self'"
+  },
+  "permissions": []
+}
