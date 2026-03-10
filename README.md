@@ -77,6 +77,8 @@ Only `action` and `reaction` are enabled by default. All types can be toggled vi
 
 ## Architecture
 
+![MobxSpy Architecture](architecture.png)
+
 ```
 Page Context (inject.js)
   | window.postMessage (nonce-authenticated)
