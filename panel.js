@@ -28,8 +28,7 @@
     "update",
     "remove",
     "delete",
-    "splice",
-    "report-end"
+    "splice"
   ];
 
   var DEFAULT_ENABLED_TYPES = ["action", "reaction"];
@@ -695,6 +694,9 @@
   /**
    * Select an individual event in the detail panel to show its full JSON.
    */
+  // Internal metadata keys — used for grouping/display but hidden from tree viewer
+  var INTERNAL_KEYS = { "_id": true, "_timestamp": true, "_objectClass": true };
+
   function selectDetailEvent(index) {
     var group = groups.get(selectedGroupKey);
     if (!group) return;
@@ -702,9 +704,18 @@
     var ev = group.events[index];
     if (!ev) return;
 
+    // Strip internal metadata before showing in tree viewer
+    var display = {};
+    var keys = Object.keys(ev);
+    for (var i = 0; i < keys.length; i++) {
+      if (!INTERNAL_KEYS[keys[i]]) {
+        display[keys[i]] = ev[keys[i]];
+      }
+    }
+
     selectedEventIndex = index;
     detailContent.innerHTML = "";
-    detailContent.appendChild(buildTreeView(ev));
+    detailContent.appendChild(buildTreeView(display));
 
     // Update selected state
     var rows = detailEventList.querySelectorAll(".detail-event-row");
@@ -1106,22 +1117,21 @@
       case "reaction":
       case "scheduled-reaction":
         return "";
-      case "computed":
-        return ev.newValue !== undefined
-          ? "=> " + truncate(JSON.stringify(ev.newValue), 80)
-          : "";
       case "update":
-        return (ev.key || ev.index !== undefined ? (ev.key || "[" + ev.index + "]") + " " : "") +
-          (ev.newValue !== undefined
-            ? truncate(JSON.stringify(ev.oldValue), 30) + " -> " + truncate(JSON.stringify(ev.newValue), 30)
-            : "");
+        var updateParts = [];
+        if (ev.name) updateParts.push(ev.name);
+        if (ev.oldValue !== undefined && ev.newValue !== undefined) {
+          updateParts.push(truncate(JSON.stringify(ev.oldValue), 30) + " -> " + truncate(JSON.stringify(ev.newValue), 30));
+        }
+        return updateParts.join(" ");
       case "splice":
-        return "index:" + ev.index + " added:" + (ev.addedCount || 0) + " removed:" + (ev.removedCount || 0);
+        return "added:" + (ev.addedCount || 0) + " removed:" + (ev.removedCount || 0);
       case "add":
-        return (ev.key ? ev.key + " = " : "") + truncate(JSON.stringify(ev.newValue), 60);
+        return (ev.name ? ev.name + " = " : "") + truncate(JSON.stringify(ev.newValue), 60);
       case "remove":
+        return (ev.name || "") + (ev.oldValue !== undefined ? " was " + truncate(JSON.stringify(ev.oldValue), 40) : "");
       case "delete":
-        return ev.key || ev.name || "";
+        return (ev.name || "") + (ev.oldValue !== undefined ? " was " + truncate(JSON.stringify(ev.oldValue), 40) : "");
       case "error":
         return ev.message || "";
       default:

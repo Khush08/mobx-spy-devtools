@@ -28,9 +28,8 @@ Based on the [official MobX spy event documentation](https://mobx.js.org/analyzi
 | `remove` | Off | Yes | Observable property removals |
 | `delete` | Off | Yes | Observable map key deletions |
 | `splice` | Off | Yes | Observable array splices |
-| `report-end` | Off | Yes | End-of-action/reaction reports |
 
-Only `action` and `reaction` are enabled by default. All types can be toggled via the Filters panel.
+Only `action` and `reaction` are enabled by default. All types can be toggled via the Filters panel. `report-end` events are unconditionally filtered out at the source — they are internal MobX bookkeeping and never reach the panel.
 
 ## Installation
 
@@ -57,6 +56,7 @@ Only `action` and `reaction` are enabled by default. All types can be toggled vi
 - Each group shows a **count badge** and **last seen** timestamp
 - Click an expandable group to open the **detail panel** on the right
 - Click individual events within the detail panel to inspect the full event data in the **tree viewer**
+- Internal metadata fields (`_id`, `_timestamp`, `_objectClass`) are automatically stripped from the tree viewer — they are used internally for grouping and display only
 - Use the **search bar** (`Ctrl+K` / `Cmd+K`) to filter groups by text
 - Use the **Filters** button to toggle which event types are displayed
 
@@ -94,7 +94,7 @@ DevTools Panel (panel.js)
 | `manifest.json` | 66 | Manifest V3 config — localhost-only URL restrictions, CSP |
 | `background.js` | 135 | Service worker — message routing between content script and panel |
 | `content.js` | 185 | Bridge between page context and extension, nonce auth, bfcache handling |
-| `inject.js` | 570 | Page-context spy — MobX detection, event capture, serialization, batching |
+| `inject.js` | 613 | Page-context spy — MobX detection, event capture, serialization, batching |
 | `devtools.html` | 9 | DevTools page shell |
 | `devtools.js` | 11 | Registers the "MobxSpy" panel tab |
 | `panel.html` | 118 | Panel markup — toolbar, filter panel, event list, detail panel, state screens |
@@ -115,24 +115,47 @@ The panel operates as a three-state machine:
 ### Event Pipeline
 
 1. `inject.js` hooks into MobX via `__mobxGlobals.spyListeners` (or fallback `mobx.spy()`)
-2. Events are **filtered by type** at the source before serialization
-3. Events are **serialized** with `safeClone()` — handles proxies, circular refs, depth limits
-4. Events are **batched** and flushed every 1 second (or immediately on stop)
-5. Batches flow through `content.js` -> `background.js` -> `panel.js`
-6. `panel.js` groups events and updates the profiling counter (no DOM rendering during capture)
-7. On stop, the grouped results are rendered into the event list
+2. `report-end` events are unconditionally discarded at the source
+3. Events are **filtered by type** at the source before serialization
+4. Events are **serialized** via per-type field whitelists and `safeClone()` — handles proxies, circular refs, depth limits
+5. Events are **batched** and flushed every 1 second (or immediately on stop)
+6. Batches flow through `content.js` -> `background.js` -> `panel.js`
+7. `panel.js` groups events and updates the profiling counter (no DOM rendering during capture)
+8. On stop, the grouped results are rendered into the event list
 
 ### Serialization (`safeClone`)
 
 MobX observables are Proxy objects — naive `JSON.stringify` frequently throws. The custom `safeClone()` function handles:
 
-- Circular references (tracked via `WeakSet`)
-- Depth limiting (max 5 levels)
+- Circular references (tracked via `Set`)
+- Depth limiting (max 6 levels for top-level fields)
+- **Per-type field whitelists** — only whitelisted fields are read from each event type, avoiding expensive Proxy traversals on unneeded properties
+- **Shallow depth fields** — `arguments` and `object` start at depth offset 3 (giving them 3 levels of recursion), keeping large observable trees manageable
+- **Container semantics** — Arrays and Sets do *not* consume depth levels (they are containers); only plain objects and Maps increment depth
+- **Sets serialized as plain arrays** — no wrapper object, consistent rendering with array data
 - Array truncation (max 100 items)
 - Object key truncation (max 50 keys)
 - Special types: `Map`, `Set`, `Date`, `RegExp`, `Error`, functions, symbols, bigints, `undefined`, `NaN`, `Infinity`
 - Malicious Proxy traps (all property access wrapped in try/catch)
 - Prototype pollution keys (`__proto__`, `constructor`, `prototype` are blocked)
+
+#### Per-type Field Whitelists
+
+Each event type has a whitelist controlling which fields get serialized. Fields not in the whitelist are never read from the event object:
+
+| Type | Whitelisted Fields |
+|------|-------------------|
+| `action` | `name`, `object`, `arguments` |
+| `add` | `name`, `object`, `observableKind`, `debugObjectName`, `newValue` |
+| `remove` | `name`, `object`, `observableKind`, `debugObjectName`, `oldValue` |
+| `update` | `name`, `object`, `observableKind`, `debugObjectName`, `oldValue`, `newValue` |
+| `delete` | `name`, `object`, `observableKind`, `debugObjectName`, `oldValue` |
+| `splice` | `name`, `object`, `observableKind`, `debugObjectName`, `removed`, `added`, `removedCount`, `addedCount` |
+| `error` | `name`, `message`, `error` |
+| `reaction` | `name` |
+| `scheduled-reaction` | `name` |
+
+Unknown/future event types with no whitelist entry serialize all fields.
 
 ## Security
 
@@ -208,4 +231,4 @@ The JSON export (`mobxspy-YYYYMMDD-HHmmss.json`) has this structure:
 - **Localhost only** — intentionally blocks profiling on production URLs to prevent accidental performance overhead
 - **Event retention** — only the last 50 individual events per group are kept in memory; older events are counted but not stored
 - **No live rendering** — events are only displayed after stopping the profiler (by design, to avoid rendering overhead during capture)
-- **Serialization depth** — nested objects are limited to 5 levels deep; deeper structures show `[Object: max depth]`
+- **Serialization depth** — nested objects are limited to 6 levels deep (3 levels for `arguments` and `object` fields); deeper structures show `[Object: max depth]`

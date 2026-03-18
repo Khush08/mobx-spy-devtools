@@ -173,7 +173,7 @@
   // Serialization
   // ──────────────────────────────────────────────
 
-  var MAX_DEPTH = 5;        // how deep to recurse into nested objects
+  var MAX_DEPTH = 6;        // how deep to recurse into nested objects
   var MAX_ARRAY_ITEMS = 100; // max array elements to serialize
   var MAX_OBJ_KEYS = 50;    // max object keys to serialize
 
@@ -220,7 +220,7 @@
       try { return val.toString(); } catch (e) { return "[Symbol]"; }
     }
 
-    // Depth limit
+    // Depth limit — only applies to objects (not arrays/sets which are containers)
     if (depth >= MAX_DEPTH) return "[Object: max depth]";
 
     // Circular reference check
@@ -248,7 +248,7 @@
         };
       }
 
-      // Map
+      // Map — counts as a depth level (like objects)
       if (safeInstanceOf(val, Map)) {
         var mapObj = { __type: "Map", size: val.size, entries: {} };
         var mc = 0;
@@ -270,25 +270,24 @@
         return mapObj;
       }
 
-      // Set
+      // Set — container, does NOT consume a depth level
       if (safeInstanceOf(val, Set)) {
         var setArr = [];
         var sc = 0;
         try {
           val.forEach(function (v) {
             if (sc >= MAX_ARRAY_ITEMS) return;
-            setArr.push(safeClone(v, depth + 1, seen));
+            setArr.push(safeClone(v, depth, seen));
             sc++;
           });
         } catch (e) {
           setArr.push("[Set iteration threw]");
         }
-        var setObj = { __type: "Set", size: val.size, values: setArr };
-        if (val.size > MAX_ARRAY_ITEMS) setObj._truncated = val.size - MAX_ARRAY_ITEMS + " more";
-        return setObj;
+        if (val.size > MAX_ARRAY_ITEMS) setArr.push("... " + (val.size - MAX_ARRAY_ITEMS) + " more");
+        return setArr;
       }
 
-      // Array (including MobX ObservableArray which is array-like)
+      // Array (including MobX ObservableArray) — container, does NOT consume a depth level
       var isArr;
       try { isArr = Array.isArray(val); } catch (e) { isArr = false; }
 
@@ -298,7 +297,7 @@
         try { len = Math.min(val.length, MAX_ARRAY_ITEMS); } catch (e) { len = 0; }
         for (var i = 0; i < len; i++) {
           try {
-            arr.push(safeClone(val[i], depth + 1, seen));
+            arr.push(safeClone(val[i], depth, seen));
           } catch (e) {
             arr.push("[Unreadable]");
           }
@@ -353,19 +352,60 @@
     }
   }
 
+  // Per-type field whitelists — only these fields get safeClone'd.
+  // Fields not in the whitelist are never read from the event, avoiding
+  // expensive Proxy traversals on large observable trees.
+  // null = no whitelist, serialize all fields.
+  var TYPE_FIELD_WHITELIST = {
+    "action":             ["name", "object", "arguments"],
+    "add":                ["name", "object", "observableKind", "debugObjectName", "newValue"],
+    "remove":             ["name", "object", "observableKind", "debugObjectName", "oldValue"],
+    "update":             ["name", "object", "observableKind", "debugObjectName", "oldValue", "newValue"],
+    "delete":             ["name", "object", "observableKind", "debugObjectName", "oldValue"],
+    "splice":             ["name", "object", "observableKind", "debugObjectName", "removed", "added", "removedCount", "addedCount"],
+    "error":              ["name", "message", "error"],
+    "reaction":           ["name"],
+    "scheduled-reaction": ["name"]
+  };
+
+  // Fields that should be serialized with a shallow depth limit.
+  // Value is the starting depth offset — safeClone starts at this depth
+  // so it only recurses (MAX_DEPTH - value) levels deep.
+  // e.g. with MAX_DEPTH=5 and offset=2, fields get 3 levels of recursion.
+  var SHALLOW_FIELDS = { "arguments": 3, "object": 3 };
+
   function serializeEvent(event) {
     var seen = new Set();
     seen.add(event); // the event itself is the root, don't re-enter it
 
     var serialized = { type: event.type };
-    var keys = Object.keys(event);
-    for (var i = 0; i < keys.length; i++) {
-      var key = keys[i];
-      if (key === "type") continue;
-      try {
-        serialized[key] = safeClone(event[key], 0, seen);
-      } catch (e) {
-        serialized[key] = "[Unserializable]";
+    var whitelist = TYPE_FIELD_WHITELIST[event.type] || null;
+
+    if (whitelist) {
+      // Only serialize whitelisted fields — skip everything else
+      for (var i = 0; i < whitelist.length; i++) {
+        var key = whitelist[i];
+        if (key in event) {
+          var startDepth = SHALLOW_FIELDS[key] || 0;
+          try {
+            serialized[key] = safeClone(event[key], startDepth, seen);
+          } catch (e) {
+            serialized[key] = "[Unserializable]";
+          }
+        }
+      }
+    } else {
+      // No whitelist — serialize all fields (unknown/future event types)
+      var keys = Object.keys(event);
+      for (var j = 0; j < keys.length; j++) {
+        var key2 = keys[j];
+        if (key2 === "type") continue;
+        var startDepth2 = SHALLOW_FIELDS[key2] || 0;
+        try {
+          serialized[key2] = safeClone(event[key2], startDepth2, seen);
+        } catch (e) {
+          serialized[key2] = "[Unserializable]";
+        }
       }
     }
     return serialized;
@@ -382,6 +422,9 @@
 
   function onSpyEvent(event) {
     if (!isMonitoring) return;
+
+    // Always skip report-end events — they are internal MobX bookkeeping
+    if (event.type === "report-end" || event.spyReportEnd) return;
 
     // Filter by type before serializing (performance)
     if (enabledTypes !== null && !enabledTypes.has(event.type)) return;
