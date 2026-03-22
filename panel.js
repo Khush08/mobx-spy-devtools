@@ -179,6 +179,51 @@
   })();
 
   // ──────────────────────────────────────────────
+  // Detail panel resize
+  // ──────────────────────────────────────────────
+
+  (function () {
+    var MIN_DETAIL_WIDTH = 200;
+    var MAX_DETAIL_WIDTH_RATIO = 0.7; // max 70% of viewport
+    var detailResizeHandle = document.getElementById("detail-resize-handle");
+    var dragging = false;
+    var startX = 0;
+    var startWidth = 0;
+
+    function getDetailWidth() {
+      return detailPanel.getBoundingClientRect().width || 380;
+    }
+
+    detailResizeHandle.addEventListener("mousedown", function (e) {
+      e.preventDefault();
+      e.stopPropagation();
+      dragging = true;
+      startX = e.clientX;
+      startWidth = getDetailWidth();
+      detailResizeHandle.classList.add("dragging");
+      document.body.style.cursor = "col-resize";
+      document.body.style.userSelect = "none";
+    });
+
+    document.addEventListener("mousemove", function (e) {
+      if (!dragging) return;
+      // Dragging left edge: moving mouse left = panel gets wider
+      var delta = startX - e.clientX;
+      var maxWidth = Math.floor(document.body.clientWidth * MAX_DETAIL_WIDTH_RATIO);
+      var newWidth = Math.max(MIN_DETAIL_WIDTH, Math.min(maxWidth, startWidth + delta));
+      document.documentElement.style.setProperty("--detail-panel-width", newWidth + "px");
+    });
+
+    document.addEventListener("mouseup", function () {
+      if (!dragging) return;
+      dragging = false;
+      detailResizeHandle.classList.remove("dragging");
+      document.body.style.cursor = "";
+      document.body.style.userSelect = "";
+    });
+  })();
+
+  // ──────────────────────────────────────────────
   // Port connection to background
   // ──────────────────────────────────────────────
 
